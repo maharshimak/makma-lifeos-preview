@@ -1,0 +1,26 @@
+name: Validate LifeOS Preview (no deploy)
+
+on:
+  push:
+    branches: [main, "audit/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifeos-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify Node and standalone preview
+        run: |
+          node --version
+          node scripts/verify-preview.mjs
