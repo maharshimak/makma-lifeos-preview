@@ -29,7 +29,7 @@ function workspace() {
   }
   for (const id of ['sidebar', 'sidebarScrim', 'breadcrumbCurrent',
     'sidebarApprovalCount', 'notificationDot', 'mainContent', 'searchTrigger',
-    'notificationBtn', 'openNav', 'closeNav', 'commandInput', 'commandResults']) {
+    'notificationBtn', 'openNav', 'closeNav', 'commandResults']) {
     elements.set('#' + id, element());
   }
   const shell = element({ inert: false });
@@ -119,6 +119,7 @@ test('command palette contains focus and returns it to the search trigger', () =
 test('command shortcut cannot stack another dialog over an open record', () => {
   const page = workspace();
   page.open();
+  assert.equal(page.document.querySelector('#commandInput'), null);
   page.dispatch('keydown', { key: 'k', ctrlKey: true });
   assert.equal(page.elements.get('#commandRoot').innerHTML, '');
   assert.equal(page.shell.inert, true);
