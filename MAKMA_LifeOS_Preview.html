@@ -196,7 +196,33 @@ body.dark{color-scheme:dark;--page:#121b28;--panel:#1a2738;--text:#e7edf5;--mute
     <section class="card settings-item"><h3>Your local data</h3><p>Records you enter are stored in this browser. Export them before changing devices or clearing browser storage.</p><div style="display:flex;gap:9px;flex-wrap:wrap">${btn('Export JSON','export','button-secondary','download')}${btn('Clear local data','clear-data','button-danger','trash')}</div></section></div>
     <section class="mt-24">${panelHeading('Integrations','Separate ChatGPT connectors do not automatically authorize this custom website.')}<div class="integration-grid">${[['Gmail','Mail ingestion','inbox'],['Outlook','Mail ingestion','inbox'],['Google Calendar','Scheduling','calendar'],['GitHub','Repository sync','code'],['Aivancity','School portal','book'],['GitHub Actions LLM','Ephemeral CPU inference','sparkle']].map(c=>`<div class="integration-card"><span class="module-icon tint-blue">${icon(c[2])}</span><div><strong>${esc(c[0])}</strong><small>${esc(c[1])}</small></div>${tag('Not configured','amber')}</div>`).join('')}</div></section><section class="card settings-item mt-24"><h3>How this preview works</h3><p>All interactive features are client-side and run without LLM API keys. We have not added a hosted agent backend, authentication, database sync, OAuth authorization, GitHub Actions jobs, or model serving endpoint yet. The next development stage will add those pieces behind secure server-side approval gates.</p><div>${tag('No email sending','green')} ${tag('No code mutations','green')} ${tag('No deployment','green')}</div></section>`;
   }
+  let activeDialog = null;
+  function beginDialog(root){
+    if(activeDialog)return false;
+    const shell=$('.app-shell');
+    activeDialog={root,opener:document.activeElement,wasInert:shell.inert};
+    shell.inert=true;
+    return true;
+  }
+  function endDialog(root){
+    if(activeDialog?.root!==root)return;
+    const {opener,wasInert}=activeDialog;
+    root.innerHTML='';activeDialog=null;
+    $('.app-shell').inert=wasInert;
+    (opener?.isConnected?opener:$('#mainContent')).focus();
+  }
+  function containDialogFocus(event){
+    if(event.key!=='Tab'||!activeDialog)return;
+    const dialog=activeDialog.root.querySelector('[role="dialog"]');
+    const controls=Array.from(dialog.querySelectorAll('a[href],button,input,select,textarea,[tabindex]'))
+      .filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
+    const first=controls[0],last=controls.at(-1),current=document.activeElement;
+    if(event.shiftKey?(current===first||!dialog.contains(current)):(current===last||!dialog.contains(current))){
+      event.preventDefault();(event.shiftKey?last:first)?.focus();
+    }
+  }
   function openModal(kind,id){
+    if(!beginDialog($('#modalRoot')))return;
     const item=id?(kind==='task'?state.tasks:kind==='application'?state.applications:state.interviews).find(x=>x.id===id):null;
     const titles={application:'opportunity',interview:'interview',task:'task'};
     const header=`${item?'Edit':'Add'} ${titles[kind]}`;
@@ -207,7 +233,7 @@ body.dark{color-scheme:dark;--page:#121b28;--panel:#1a2738;--text:#e7edf5;--mute
     $('#modalRoot').innerHTML=`<div class="modal-overlay"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalHeading"><div class="modal-head"><div><h2 id="modalHeading">${esc(header)}</h2><p>Saved privately in this browser · no external actions</p></div><button class="icon-button" data-action="close-modal" aria-label="Close dialog">${icon('x')}</button></div><form id="recordForm" class="modal-body" data-kind="${kind}" data-id="${esc(id||'')}"><div class="form-grid">${fields}</div><div class="modal-foot"><button type="button" class="button button-secondary" data-action="close-modal">Cancel</button><button type="submit" class="button button-primary">${item?'Save changes':'Add to workspace'}</button></div></form></section></div>`;
     $('#modalRoot input')?.focus();
   }
-  function closeModal(){$('#modalRoot').innerHTML=''}
+  function closeModal(){endDialog($('#modalRoot'))}
   function upsertForm(form){const kind=form.dataset.kind,id=form.dataset.id;const data=Object.fromEntries(new FormData(form).entries());const values=Object.fromEntries(Object.entries(data).map(([k,v])=>[k,String(v).trim()]));const arr=kind==='task'?state.tasks:kind==='application'?state.applications:state.interviews;
     if(kind==='interview'){
       // Keep the user-entered wall time and an explicit Europe/Paris timezone label.
@@ -221,7 +247,7 @@ body.dark{color-scheme:dark;--page:#121b28;--panel:#1a2738;--text:#e7edf5;--mute
     if(!['application','interview','task'].includes(kind))return;
     if(id){const target=arr.find(x=>x.id===id);if(!target){toast('Entry no longer exists');return}Object.assign(target,values);logActivity('edit',`Updated ${kind}: ${values.company||values.title}`)}
     else {arr.push({id:shortId(),...values,...(kind==='task'?{done:false}:{})});logActivity('add',`Added ${kind}: ${values.company||values.title}`)}
-    save();closeModal();render();toast(id?'Changes saved in this browser':'Added to your local workspace');
+    save();render();closeModal();toast(id?'Changes saved in this browser':'Added to your local workspace');
   }
   function parseParisWallTime(wall){if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(wall))return null;
     const guess=new Date(wall+':00Z');if(Number.isNaN(guess.getTime()))return null;
@@ -236,8 +262,8 @@ body.dark{color-scheme:dark;--page:#121b28;--panel:#1a2738;--text:#e7edf5;--mute
     const idx=arr.findIndex(x=>x.id===id);if(idx<0)return;const item=arr[idx];arr.splice(idx,1);logActivity('delete',`Removed ${kind}: ${item.company||item.title}`);save();render();toast('Entry removed locally');
   }
   function exportData(){const exportPayload={format:'makma-lifeos-preview',version:1,exportedAt:new Date().toISOString(),data:state,githubSnapshot:{verifiedAt:SNAPSHOT,repositories:REPOSITORIES,reviewLinks:VERIFIED_REVIEWS.map(x=>x.url)}};const blob=new Blob([JSON.stringify(exportPayload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='makma-lifeos-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);toast('Workspace JSON exported')}
-  function openCommand(){const root=$('#commandRoot');root.innerHTML=`<div class="command-overlay"><section class="command-panel" role="dialog" aria-modal="true" aria-label="Search workspace"><div class="command-input-wrap">${icon('search')}<input id="commandInput" placeholder="Search pages or run a quick action..." autocomplete="off" aria-label="Search commands"/><button class="icon-button" data-action="close-command" aria-label="Close search">${icon('x')}</button></div><div class="command-results" id="commandResults"></div><div class="command-help">Type a page name · Escape to close · ⌘/Ctrl K to open</div></section></div>`;renderCommands('');$('#commandInput').focus()}
-  function closeCommand(){$('#commandRoot').innerHTML=''}
+  function openCommand(){const root=$('#commandRoot');if(!beginDialog(root))return;root.innerHTML=`<div class="command-overlay"><section class="command-panel" role="dialog" aria-modal="true" aria-label="Search workspace"><div class="command-input-wrap">${icon('search')}<input id="commandInput" placeholder="Search pages or run a quick action..." autocomplete="off" aria-label="Search commands"/><button class="icon-button" data-action="close-command" aria-label="Close search">${icon('x')}</button></div><div class="command-results" id="commandResults"></div><div class="command-help">Type a page name · Escape to close · ⌘/Ctrl K to open</div></section></div>`;renderCommands('');$('#commandInput').focus()}
+  function closeCommand(){endDialog($('#commandRoot'))}
   function renderCommands(text){const q=text.toLowerCase().trim();const acts=[...NAV.map(([r,l,i])=>({label:l,icon:i,action:'navigate',value:r,meta:'Page'})),{label:'Add opportunity',icon:'briefcase',action:'new-application',meta:'Create'},{label:'Add interview',icon:'calendar',action:'new-interview',meta:'Create'},{label:'Add task',icon:'plus',action:'new-task',meta:'Create'}];const found=acts.filter(x=>x.label.toLowerCase().includes(q));$('#commandResults').innerHTML=found.length?found.map(x=>`<button class="command-row" data-command="${esc(x.action)}" data-value="${esc(x.value||'')}">${icon(x.icon)}<span>${esc(x.label)}</span><small>${esc(x.meta)}</small>${icon('arrow')}</button>`).join(''):`<div class="empty-small">No matching pages or actions.</div>`}
   function handleAction(act,el){const id=el?.dataset?.id;
     if(act==='new-task')openModal('task');else if(act==='new-application')openModal('application');else if(act==='new-interview')openModal('interview');
@@ -267,7 +293,7 @@ body.dark{color-scheme:dark;--page:#121b28;--panel:#1a2738;--text:#e7edf5;--mute
     else if(ev.target.matches('[data-change-stage]')){const item=state.applications.find(x=>x.id===ev.target.dataset.changeStage);if(item){item.status=ev.target.value;logActivity('edit',`Updated ${item.company} to ${item.status}`);save();render();toast('Pipeline stage updated locally')}}
   });
   document.addEventListener('click',ev=>{if(ev.target.closest('#themeSwitch')){state.dark=!state.dark;save();render()}});
-  document.addEventListener('keydown',ev=>{if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='k'){ev.preventDefault();$('#commandInput')?closeCommand():openCommand()}if(ev.key==='Escape'){closeCommand();closeModal();closeNav()}});
+  document.addEventListener('keydown',ev=>{containDialogFocus(ev);if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='k'){ev.preventDefault();$('#commandInput')?closeCommand():openCommand()}if(ev.key==='Escape'){closeCommand();closeModal();closeNav()}});
   $('#searchTrigger').addEventListener('click',openCommand);
   $('#notificationBtn').addEventListener('click',()=>setRoute('approvals'));
   $('#openNav').addEventListener('click',()=>{$('#sidebar').classList.add('open');$('#sidebarScrim').hidden=false});

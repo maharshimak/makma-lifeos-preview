@@ -14,6 +14,16 @@ Open MAKMA_LifeOS_Preview.html in an isolated browser profile. Default stored st
 
 READY
 
+## Keyboard dialogs
+
+Record dialogs and workspace search keep keyboard focus inside the active dialog
+and make the background inert. Escape or Cancel restores the invoking control;
+after a save refreshes the page content, focus returns to the main region.
+
+Run the dependency-free focus regression suite with Node.js:
+`node --test tests/dialog-focus.test.mjs`. The DOM fixture tests focus ownership;
+native tab order and responsive layout also require browser verification.
+
 
 
 ## Known limitations and improvements
